@@ -1,0 +1,181 @@
+---
+title: 'Entity Recognition Assignment'
+author: "Yueze Xu"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+#do not change this
+knitr::opts_chunk$set(echo = TRUE)
+setwd("C:/Users/hera-/Desktop/HU/ANLY520/HW")
+```
+
+## Libraries / R Setup
+
+- In this section, include the *R* set up for Python to run. 
+
+```{r warning=FALSE}
+##r chunk
+library(reticulate)
+py_config()
+library(wordnet)
+setDict("C:/Program Files (x86)/WordNet/2.1/dict")
+```
+
+- In this section, include import functions to load the packages you will use for Python.
+
+```{python}
+##python chunk
+import warnings
+warnings.filterwarnings('ignore')
+from nltk.corpus import wordnet as wn
+import pandas as pd
+from nltk.corpus import wordnet_ic
+import spacy
+from spacy.util import minibatch, compounding
+from pathlib import Path
+import random
+```
+
+## Synsets
+
+- You should create a Pandas dataframe of the synsets for a random word in Wordnet.
+- Use https://www.randomword.net/ to find your random word.
+- You should create this dataframe like the example shown for "fruit" in the notes.
+
+```{python}
+##python chunk
+#Choose 'season' as my word
+season_sets_py = wn.synsets("season")
+print(season_sets_py)
+season_df = pd.DataFrame([
+  {"Synset": each_synset, 
+  "Part of Speech": each_synset.pos(), 
+  "Definition": each_synset.definition(), 
+  "Lemmas": each_synset.lemma_names(), 
+  "Examples": each_synset.examples()} 
+  for each_synset in season_sets_py])
+season_df
+season_df["Definition"]
+```
+
+## Nyms
+
+- Include the hymonyms and hypernyms of the random word from above. 
+
+```{python}
+##python chunk
+season= season_sets_py[0]
+#Homonyms:a subordinate name, more specific 
+season.hyponyms()
+#Hypernyms: a superordinate name, more abstract
+season.hypernyms()
+```
+
+## Similarity
+
+- Think of two related words to your random word. You can use the synonyms on the random generator page. Calculate the JCN and LIN similarity of your random word and these two words. (four numbers total).
+
+```{python}
+##python chunk
+#word 1: temper
+temper = wn.synsets("temper")
+temper[0].definition()
+temper = temper[0]
+
+#word 2: Spring
+spring = wn.synsets("Spring")
+spring[0].definition()
+spring = spring[0]
+
+#JCN
+semcor_ic = wordnet_ic.ic('ic-semcor.dat')
+
+print('Season vs Temper(JCN similarity): ', season.jcn_similarity(temper, semcor_ic))
+print('Season vs Spring(JCN similarity): ', season.jcn_similarity(spring, semcor_ic))
+#LIN
+print('Season vs Temper(LIN similarity): ', season.lin_similarity(temper, semcor_ic))
+print('Season vs Spring(LIN similarity): ', season.lin_similarity(spring, semcor_ic))
+```
+
+## NER Tagging
+
+- Create a blank spacy model to create your NER tagger. 
+
+```{python}
+##python chunk
+nlp = spacy.load('en_core_web_sm')  # load existing spacy model
+nlp = spacy.blank('en')  # create blank Language class
+
+```
+
+- Add the NER pipe to your blank model. 
+
+```{python}
+##python chunk
+ner = nlp.create_pipe('ner')
+nlp.add_pipe(ner, last=True)
+```
+
+- Create training data. 
+  - Go to: http://trumptwitterarchive.com/
+  - Note you can pick other people than Trump by using "Additional Accounts" at the top right. 
+  - Create training data with at least 5 tweets. 
+  - Tag those tweets with PERSON, LOCATION, GPE, etc. 
+
+```{python}
+##python chunk
+training_data = [
+  (u"Why didn’t Bill Barr reveal the truth to the public, before the Election, about Hunter Biden. Joe was lying on the debate stage that nothing was wrong, or going on - Press confirmed. Big disadvantage for Republicans at the polls!",
+   {'entities': [ (11,19,'PERSON'),(80,96,'PERSON') ]}),
+  
+  (u"No candidate has ever won both Florida and Ohio and lost. I won them both, by a lot! #SupremeCourt",
+   {'entities': [(31,37,'LOCATION'),(43,46,'LOCATION')]}),
+  
+  (u"Thank you and congratulations to General Flynn. He and his incredible family have suffered greatly! https://t.co/UjH6LVuON8",
+   {'entities': [(33,45,'PERSON'),(100,122,'URL')]}),
+   
+  (u"FOR COURAGE & BRILLIANCE! https://t.co/mPM5ejy2lU",
+   {'entities': [(26,48,'URL')]}),
+   
+  (u"Big Rally Saturday Night in Georgia!!!",
+   {'entities': [(28,34,'LOCATION')]})
+]
+
+```
+
+- Add the labels that you used above to your NER tagger. 
+
+```{python}
+##python chunk
+nlp.entity.add_label('PERSON')
+nlp.entity.add_label('LOCATION')
+nlp.entity.add_label('URL')
+```
+
+- Train your NER tagger with the training dataset you created. 
+
+```{python}
+##python chunk
+optimizer = nlp.begin_training()
+
+#run through training
+for i in range(20):
+  random.shuffle(training_data)
+  for text, annotations in training_data:
+    nlp.update([text], [annotations], sgd=optimizer)
+```
+
+## Using your NER Tagger 
+
+- Use one new tweet from the same writer you had before. 
+- Use your new NER tagger to see if it grabs any of the entities you included. 
+***Did not get it, the model may need further modification***
+```{python}
+##python chunk
+new_tweet = nlp(u'Manufacturers are being held back by the strong Dollar, which is being propped up by the ridiculous policies of the Federal Reserve - Which has called interest rates and quantitative tightening wrong from the first days of Jay Powell')
+
+print("Entities", [(ent.text, ent.label_) for ent in new_tweet.ents])
+```
+
