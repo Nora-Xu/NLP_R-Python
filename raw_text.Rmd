@@ -1,0 +1,248 @@
+---
+title: 'Processing Raw Text Assignment'
+author: "Yueze Xu"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+#do not change this
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+In each step, you will process your data for common text data issues. Be sure to complete each one in *R* and Python separately - creating a clean text version in each language for comparison at the end. Update the saved clean text at each step, do not simply just print it out. 
+
+## Libraries / R Setup
+
+- In this section, include the libraries you need for the *R* questions.  
+
+```{r warning=FALSE}
+##r chunk
+library(reticulate)
+py_config()
+library(rvest)
+library(stringr)
+library(stringi)
+library(tokenizers)
+library(textclean)
+library(hunspell)
+library(textstem)
+library(tm)
+```
+
+- In this section, include import functions to load the packages you will use for Python.
+
+```{python}
+##python chunk
+import requests
+from bs4 import BeautifulSoup
+import unicodedata
+import contractions
+import textblob
+from textblob import Word
+import spacy
+import nltk
+from nltk.corpus import stopwords 
+from nltk.tokenize import word_tokenize
+```
+
+## Import data to work with
+
+- Use `rvest` to import a webpage and process that text for `html` codes (i.e. take them out)!
+
+```{r}
+##r chunk
+url = 'https://screenrant.com/genshin-impact-1-6-midsummer-island-klee-banner-event/'
+
+#The first try did not have node/class condition
+#text = read_html(url)
+
+text = read_html(url)%>% html_nodes(".w-content")
+clean_text = html_text(text)
+```
+
+- Use the `requests` package to import the same webpage and use `BeautifulSoup` to clean up the `html` codes.
+
+```{python}
+##python chunk 
+#import requests
+url_py = "https://screenrant.com/genshin-impact-1-6-midsummer-island-klee-banner-event/"
+header = {"User-Agent": "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.119 Safari/537.36"}
+r = requests.get(url=url_py,headers= header)
+text_py = r.content
+
+#from bs4 import BeautifulSoup
+beauti_text_py = BeautifulSoup(text_py,features="html.parser")
+clean_text_py = beauti_text_py.get_text()
+
+```
+
+## Lower case
+
+- Lower case the text you created using *R*.
+
+```{r}
+##r chunk
+lowercase_text = tolower(clean_text)
+```
+
+- Lower case the text you created using python.
+
+```{python}
+##python chunk
+lowercase_text_py = clean_text_py.lower()
+```
+
+## Removing symbols
+
+- Use the `stringi` package to remove any symbols from your text. 
+
+```{r}
+##r chunk
+remove_symbols_text = stri_trans_general(str = lowercase_text,id = "Latin-ASCII")
+```
+
+- Use the `unicodedata` in python to remove any symbols from your text. 
+
+```{python}
+##python chunk
+#import unicodedata
+remove_symbols_text_py = unicodedata.normalize('NFKD', lowercase_text_py).encode('ASCII', 'ignore').decode('utf-8', 'ignore')
+```
+
+## Contractions
+
+- Replace all the contractions in your webpage using *R*.
+
+```{r}
+##r chunk
+tokenized_text = unlist(tokenize_sentences(remove_symbols_text))
+remove_contractions_text = str_replace_all(tokenized_text, pattern = "'", replacement = "")
+```
+
+- Replace all the contractions in your webpage using python.
+
+```{python}
+##python chunk
+#import contractions
+remove_contractions_py = contractions.fix(remove_symbols_text_py)
+```
+  
+## Spelling
+
+- Fix any spelling errors with the `hunspell` package in *R* - it's ok to use the first, most probable option, like we did in class. 
+
+```{r}
+##r chunk
+# spell check the words
+spelling.errors <- hunspell(remove_contractions_text)
+spelling.sugg <- hunspell_suggest(unlist(spelling.errors), dict = dictionary("en_US"))
+
+# Pick the first suggestion
+spelling.sugg <- unlist(lapply(spelling.sugg, function(x) x[1]))
+spelling.dict <- as.data.frame(cbind(spelling.errors,spelling.sugg))
+spelling.dict$spelling.pattern <- paste0("\\b", spelling.dict$spelling.errors, "\\b")
+
+#Replace the words 
+removeError_text = stri_replace_all_regex(
+  str = remove_contractions_text,
+  pattern = spelling.dict$spelling.pattern, 
+  replacement = spelling.dict$spelling.sugg,
+  vectorize_all = FALSE)
+```
+
+- Fix your spelling errors using `textblob` from python. 
+
+```{python}
+##python chunk
+removeError_text_py = [Word(word).correct() for word in remove_contractions_py]
+```
+
+## Lemmatization
+
+- Lemmatize your data in *R* using `textstem`. 
+
+```{r}
+##r chunk
+lemmatize_text = lemmatize_words(removeError_text)
+```
+
+- Lemmatize your data in python using `spacy`. 
+
+```{python}
+##python chunk
+nlp = spacy.load('en_core_web_sm')
+def lemmatize_text(text):
+  text = nlp(text)
+  text = " ".join([word.lemma_ if word.lemma_ != "-PRON-" else word.text for  word in text])
+  return text
+#need List to String to use nlp function.
+sentence = ''.join([str(elem) for elem in removeError_text_py])
+lemmatize_text_py = lemmatize_text(sentence)
+```
+
+## Stopwords
+
+- Remove all the stopwords from your *R* clean text. 
+
+```{r}
+##r chunk
+remove_stopwords= removeWords(lemmatize_text, stopwords(kind = "SMART"))
+```
+
+- Remove all the stop words from your python clean text. 
+
+```{python}
+##python chunk
+remove_stopwords_py = [word for word in nltk.word_tokenize(lemmatize_text_py) if word not in stopwords.words('english')]
+```
+
+## Tokenization 
+
+- Use the `tokenize_words` function to create a set of words for your *R* clean text. 
+
+```{r}
+##r chunk
+#lowercase = F, stopwrds = NULL, since we've already checked that previously.
+tokenized_text = tokenize_words(remove_stopwords,lowercase = F, stopwords = NULL, 
+                                 strip_punct = T,strip_numeric = F,simplify = F)
+
+```
+
+- Use `nltk` or `spacy` to tokenize the words from your python clean text. 
+
+```{python}
+##python chunk
+#need to convert to string again to use nlp function
+sentence2 = ' '.join([str(elem) for elem in remove_stopwords_py])
+text = nlp(sentence2)
+tokenized_text_py = [word.text for word in text]
+```
+
+## Check out the results
+
+- Print out the first 100 tokens of your clean text from *R*. 
+
+```{r}
+##r chunk
+tokenized_text[[1]][1:100]
+```
+
+- Print out the first 100 tokens of your clean text from python. 
+
+```{python}
+##python chunk
+print(tokenized_text_py[:100])
+```
+
+Note: here you can print out, summarize, or otherwise view your text in anyway you want. 
+
+- ANSWER THIS: Compare the results from your processing. Write a short paragraph answering the following questions. You will need to write more than a few sentences for credit. 
+  - Which text appears to be "cleaner"? \
+  **For this questions, my answer is both way can get a clean text. At beginning, I did not use `html_nodes(".w-content")`to clean my html for R, and the text parsed from Python show more cleaner. Without content condition Python can get main text from the website, but R will get the header from the website as well, which seems like messy code to me.** \
+   - Or are they the same? \
+  **After the condition, both results show pretty clean to me,R has slightly better results, but they are not same.**\
+  - What differences can you spot? \
+  **Python result still includes some symbols, but text from R only including words and numbers.**
+  - Which processing approach appears to be easier? \
+  **For this question, neither approach appears to be easy. Both approach needs practices and research to get the correct results, so I would like to say it would be easier after multiple times of practice and testing. **
